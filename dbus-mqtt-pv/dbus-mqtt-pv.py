@@ -26,6 +26,9 @@ try:
     if os.path.exists(config_file):
         config = configparser.ConfigParser()
         config.read(config_file)
+        volkszaehler_power_sign = config.getint("VOLKSZAEHLER", "power_sign", fallback=1)
+        if volkszaehler_power_sign not in (-1, 1):
+            raise ValueError('VOLKSZAEHLER "power_sign" must be 1 or -1')
         if config["MQTT"]["broker_address"] == "IP_ADDR_OR_FQDN":
             print('ERROR:The "config.ini" is using invalid default values like IP_ADDR_OR_FQDN. The driver restarts in 60 seconds.')
             sleep(60)
@@ -176,6 +179,7 @@ def on_message(client, userdata, msg):
 
             value = float(jsonpayload["value"])
             if msg.topic == total_power_topic:
+                value *= volkszaehler_power_sign
                 pv_power_above_threshold = value > standby_power
                 pv_power = value if pv_power_above_threshold else 0.0
                 pv_current = pv_power / float(config["DEFAULT"]["voltage"])
@@ -183,6 +187,7 @@ def on_message(client, userdata, msg):
                 pv_voltage = float(config["DEFAULT"]["voltage"])
             elif msg.topic in power_topics:
                 phase = power_topics[msg.topic]
+                value *= volkszaehler_power_sign
                 phase_power = value
                 phase_current = phase_power / float(config["DEFAULT"]["voltage"]) if phase_power > standby_power else 0.0
                 phase_power = phase_power if phase_power > standby_power else 0.0
