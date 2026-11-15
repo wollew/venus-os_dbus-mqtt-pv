@@ -129,7 +129,19 @@ def on_connect(client, userdata, flags, reason_code, properties):
     if reason_code == 0:
         logging.info("MQTT client: Connected to MQTT broker!")
         connected = 1
-        client.subscribe(config["MQTT"]["topic"])
+        if config.getboolean("VOLKSZAEHLER", "enabled", fallback=False):
+            total_power_topic = config.get("VOLKSZAEHLER", "power_topic", fallback="").strip()
+            if total_power_topic:
+                client.subscribe(total_power_topic)
+            for phase in ("L1", "L2", "L3"):
+                topic = config.get("VOLKSZAEHLER", f"power_topic_{phase.lower()}", fallback="").strip()
+                if topic:
+                    client.subscribe(topic)
+            energy_topic = config.get("VOLKSZAEHLER", "energy_topic", fallback="").strip()
+            if energy_topic:
+                client.subscribe(energy_topic)
+        else:
+            client.subscribe(config["MQTT"]["topic"])
     else:
         logging.error("MQTT client: Failed to connect, return code %d\n", reason_code)
 
@@ -142,8 +154,61 @@ def on_message(client, userdata, msg):
         global pv_L2_power, pv_L2_current, pv_L2_voltage, pv_L2_frequency, pv_L2_power_factor, pv_L2_forward
         global pv_L3_power, pv_L3_current, pv_L3_voltage, pv_L3_frequency, pv_L3_power_factor, pv_L3_forward
 
+        volkszaehler_enabled = config.getboolean("VOLKSZAEHLER", "enabled", fallback=False)
+        total_power_topic = config.get("VOLKSZAEHLER", "power_topic", fallback="").strip()
+        power_topics = {
+            config.get("VOLKSZAEHLER", f"power_topic_{phase.lower()}", fallback="").strip(): phase
+            for phase in ("L1", "L2", "L3")
+            if config.get("VOLKSZAEHLER", f"power_topic_{phase.lower()}", fallback="").strip()
+        }
+        energy_topic = config.get("VOLKSZAEHLER", "energy_topic", fallback="").strip()
+
+        if volkszaehler_enabled and (msg.topic == total_power_topic or msg.topic in power_topics or msg.topic == energy_topic):
+            if msg.payload == "" or msg.payload == b"":
+                logging.warning("Received Volkszaehler MQTT message was empty and therefore it was ignored")
+                return
+
+            jsonpayload = json.loads(msg.payload)
+            if not isinstance(jsonpayload, dict) or "value" not in jsonpayload:
+                logging.error('Received Volkszaehler MQTT message does not include a "value".')
+                logging.debug("MQTT payload: " + str(msg.payload)[1:])
+                return
+
+            value = float(jsonpayload["value"])
+            if msg.topic == total_power_topic:
+                pv_power_above_threshold = value > standby_power
+                pv_power = value if pv_power_above_threshold else 0.0
+                pv_current = pv_power / float(config["DEFAULT"]["voltage"])
+                pv_current = pv_current if pv_power_above_threshold else 0.0
+                pv_voltage = float(config["DEFAULT"]["voltage"])
+            elif msg.topic in power_topics:
+                phase = power_topics[msg.topic]
+                phase_power = value
+                phase_current = phase_power / float(config["DEFAULT"]["voltage"]) if phase_power > standby_power else 0.0
+                phase_power = phase_power if phase_power > standby_power else 0.0
+                if phase == "L1":
+                    pv_L1_power, pv_L1_current = phase_power, phase_current
+                    pv_L1_voltage = float(config["DEFAULT"]["voltage"])
+                    pv_L1_frequency = float(config["DEFAULT"]["frequency"])
+                    pv_L1_power_factor = None
+                elif phase == "L2":
+                    pv_L2_power, pv_L2_current = phase_power, phase_current
+                    pv_L2_voltage = float(config["DEFAULT"]["voltage"])
+                    pv_L2_frequency = float(config["DEFAULT"]["frequency"])
+                    pv_L2_power_factor = None
+                else:
+                    pv_L3_power, pv_L3_current = phase_power, phase_current
+                    pv_L3_voltage = float(config["DEFAULT"]["voltage"])
+                    pv_L3_frequency = float(config["DEFAULT"]["frequency"])
+                    pv_L3_power_factor = None
+
+            else:
+                pv_forward = value / 1000
+
+            last_changed = int(time())
+
         # get JSON from topic
-        if msg.topic == config["MQTT"]["topic"]:
+        elif msg.topic == config["MQTT"]["topic"]:
             if msg.payload != "" and msg.payload != b"":
                 jsonpayload = json.loads(msg.payload)
 
@@ -342,7 +407,7 @@ class DbusMqttPvService:
                 self._dbusservice["/Ac/L1/PowerFactor"] = round(pv_L1_power_factor, 3) if pv_L1_power_factor is not None else None
                 self._dbusservice["/Ac/L1/Energy/Forward"] = round(pv_L1_forward, 2) if pv_L1_forward is not None else None
             # at least one phase is needed to work properly
-            elif pv_L2_power is None and pv_L3_power is None:
+            elif pv_L2_power is None and pv_L3_power is None and not config.getboolean("VOLKSZAEHLER", "enabled", fallback=False):
                 self._dbusservice["/Ac/L1/Power"] = round(pv_power, 2) if pv_power is not None else None
                 self._dbusservice["/Ac/L1/Current"] = round(pv_current, 2) if pv_current is not None else None
                 self._dbusservice["/Ac/L1/Voltage"] = round(pv_voltage, 2) if pv_voltage is not None else None

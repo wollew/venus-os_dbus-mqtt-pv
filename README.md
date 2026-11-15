@@ -1,6 +1,6 @@
 # dbus-mqtt-pv - Emulates a physical PV Inverter from MQTT data
 
-<small>GitHub repository: [mr-manuel/venus-os_dbus-mqtt-pv](https://github.com/mr-manuel/venus-os_dbus-mqtt-pv)</small>
+<small>GitHub repository: [wollew/venus-os_dbus-mqtt-pv](https://github.com/wollew/venus-os_dbus-mqtt-pv)</small>
 
 ## Index
 
@@ -148,6 +148,35 @@ Copy or rename the `config.sample.ini` to `config.ini` in the `dbus-mqtt-pv` fol
 </details>
 
 
+### Volkszaehler
+
+Volkszaehler publishes one JSON value per channel. To use it, enable `[VOLKSZAEHLER]` in `config.ini` and set the power and energy topics to the channel topics in your setup. For example:
+
+```ini
+[VOLKSZAEHLER]
+enabled = 1
+power_topic = volkszaehler/data/chn4/raw
+power_topic_l1 = volkszaehler/data/chn2/raw
+power_topic_l2 =
+power_topic_l3 =
+energy_topic = volkszaehler/data/chn1/raw
+```
+
+Set `power_topic` to the channel publishing total instantaneous power, and set each `power_topic_l1`, `power_topic_l2`, or `power_topic_l3` to its phase channel. Leave unused phases empty. Each configured power topic should publish watts:
+
+```json
+{"timestamp": 1793446082566, "value": 155.3}
+```
+
+The energy topic should publish total produced energy in watt-hours:
+
+```json
+{"timestamp": 1793446091387, "value": 101196517.7}
+```
+
+The driver reports total AC power only from `power_topic`; it does not calculate the total by summing phases. Phase topics update only their matching phase paths. The energy channel is reported as total energy only, converted from Wh to kWh. Voltage and frequency for configured phases use the configured defaults. When enabled, the driver subscribes to each configured power topic and the energy topic instead of `[MQTT] topic`.
+
+
 ### Home Assistant
 
 This is only a simple example that can be reduced expanded to match the minimum or full requirements shown above.
@@ -265,7 +294,7 @@ Additional information can be found in this [issue](https://github.com/mr-manuel
 2. Execute this commands to download and copy the files:
 
     ```bash
-    wget -O /tmp/download_dbus-mqtt-pv.sh https://raw.githubusercontent.com/mr-manuel/venus-os_dbus-mqtt-pv/master/download.sh
+    wget -O /tmp/download_dbus-mqtt-pv.sh https://raw.githubusercontent.com/wollew/venus-os_dbus-mqtt-pv/master/download.sh
 
     bash /tmp/download_dbus-mqtt-pv.sh
     ```
