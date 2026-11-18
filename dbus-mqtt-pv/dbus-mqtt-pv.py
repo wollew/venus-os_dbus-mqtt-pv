@@ -185,6 +185,12 @@ def on_message(client, userdata, msg):
                 pv_current = pv_power / float(config["DEFAULT"]["voltage"])
                 pv_current = pv_current if pv_power_above_threshold else 0.0
                 pv_voltage = float(config["DEFAULT"]["voltage"])
+                if not power_topics:
+                    pv_L1_power = pv_L2_power = pv_L3_power = pv_power / 3
+                    pv_L1_current = pv_L2_current = pv_L3_current = pv_current / 3
+                    pv_L1_voltage = pv_L2_voltage = pv_L3_voltage = pv_voltage
+                    pv_L1_frequency = pv_L2_frequency = pv_L3_frequency = float(config["DEFAULT"]["frequency"])
+                    pv_L1_power_factor = pv_L2_power_factor = pv_L3_power_factor = None
             elif msg.topic in power_topics:
                 phase = power_topics[msg.topic]
                 value *= volkszaehler_power_sign
